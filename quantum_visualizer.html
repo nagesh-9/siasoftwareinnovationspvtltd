@@ -2186,34 +2186,48 @@ function exportPDF(){
   let sv=Array(d).fill(null).map(()=>[0,0]);sv[0]=[1,0];
   const ops=cStep>=0?cOps.slice(0,cStep+1):cOps;
   ops.forEach(op=>{
-    if(op.type==='meas')return;let U;
+    if(op.type==='meas')return;
+    let U;
     if(op.type==='single')U=buildSG(GM[op.gate],op.target,n).mat;
     else if(op.type==='rot'){const Gm=op.gate==='RX'?rotX(op.theta):op.gate==='RY'?rotY(op.theta):rotZ(op.theta);U=buildSG(Gm,op.target,n).mat;}
     else if(op.gate==='CNOT')U=buildCNOT(op.control,op.target,n).mat;
     else if(op.gate==='CZ')U=buildCZ(op.control,op.target,n).mat;
     else if(op.gate==='SWAP')U=buildSWAP(op.control,op.target,n).mat;
     else if(op.gate==='CCX')U=buildCCX(op.control,op.control2,op.target,n).mat;
-    if(U)sv=mVec(U,sv,d);});
+    if(U)sv=mVec(U,sv,d);
+  });
+
   const probs=Array.from({length:d},(_,i)=>Cx.abs2(sv[i]));
   const states=Array.from({length:d},(_,i)=>i.toString(2).padStart(n,'0'));
   const rho1=n>=5?ptrace1SV(sv,0,n):ptrace1(outer(sv,d),0,n);
   const bv=blochVec(rho1);
   const topStates=probs.map((p,i)=>({p,s:states[i],a:sv[i]})).filter(x=>x.p>0.001).sort((a,b)=>b.p-a.p).slice(0,16);
   const ts=new Date().toLocaleString();
+  const reportFileName=`hdqs_circuit_report_${Date.now()}.pdf`;
+
   const gateList=cOps.map((op,i)=>{
     let desc=op.gate;
-    if(op.type==='rot')desc+=`(θ=${op.theta.toFixed(4)}r)`;
+    if(op.type==='rot')desc+=`(theta=${op.theta.toFixed(4)}r)`;
     if(op.control!==null&&op.control!==undefined)desc+=` ctrl=Q${op.control}`;
     if(op.control2!==null&&op.control2!==undefined)desc+=` ctrl2=Q${op.control2}`;
-    return `<tr><td>${i+1}</td><td>${desc}</td><td>Q${op.target}</td></tr>`;}).join('');
+    return `<tr><td>${i+1}</td><td>${desc}</td><td>Q${op.target}</td></tr>`;
+  }).join('');
+
   const stateRows=topStates.map(({p,s,a})=>{
     const ph=(Cx.phase(a)*180/Math.PI).toFixed(1);
-    return `<tr><td>|${s}⟩</td><td>${a[0].toFixed(4)}${a[1]>=0?'+':''}${a[1].toFixed(4)}i</td><td>${ph}°</td><td>${(p*100).toFixed(3)}%</td></tr>`;}).join('');
-  const allProbRows=probs.map((p,i)=>`<tr><td>|${states[i]}⟩</td><td>${(p*100).toFixed(4)}%</td></tr>`).join('');
+    return `<tr><td>|${s}></td><td>${a[0].toFixed(4)}${a[1]>=0?'+':''}${a[1].toFixed(4)}i</td><td>${ph} deg</td><td>${(p*100).toFixed(3)}%</td></tr>`;
+  }).join('');
+
+  const allProbRows=probs.map((p,i)=>`<tr><td>|${states[i]}></td><td>${(p*100).toFixed(4)}%</td></tr>`).join('');
+
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>HDQS Circuit Report</title>
 <style>
   body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#111;margin:0;padding:0;}
+  .toolbar{position:sticky;top:0;z-index:50;background:#fff;border-bottom:1px solid #dde;padding:10px 12px;display:flex;gap:8px;align-items:center;}
+  .toolbar button{border:1px solid #003366;background:#fff;color:#003366;border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px;}
+  .toolbar button:hover{background:#eef4ff;}
+  .dl-status{font-size:11px;color:#555;}
   .page{max-width:700px;margin:0 auto;padding:30px 40px;}
   h1{font-size:20px;color:#003366;border-bottom:2px solid #003366;padding-bottom:8px;margin-bottom:4px;}
   h2{font-size:14px;color:#003366;margin-top:20px;margin-bottom:6px;border-bottom:1px solid #aac;}
@@ -2226,26 +2240,31 @@ function exportPDF(){
   .bloch-row{display:flex;gap:16px;align-items:center;}
   .bloch-num{font-family:monospace;font-size:13px;color:#003366;}
   .footer{font-size:10px;color:#888;text-align:center;margin-top:30px;border-top:1px solid #dde;padding-top:8px;}
-  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}.toolbar{display:none !important;}}
 </style></head><body>
+<div class="toolbar">
+  <button onclick="window.print()">Print</button>
+  <button onclick="downloadPdf()">Download PDF</button>
+  <span class="dl-status" id="dl-status">Use Download PDF on mobile.</span>
+</div>
 <div class="page">
-<h1>Quantum Circuit Report — HDQS Visualiser</h1>
-<div class="meta">Generated: ${ts} &nbsp;|&nbsp; Qubits: ${n} &nbsp;|&nbsp; Gates: ${cOps.length} &nbsp;|&nbsp; Hilbert dim: ${d}</div>
+<h1>Quantum Circuit Report - HDQS Visualiser</h1>
+<div class="meta">Generated: ${ts} | Qubits: ${n} | Gates: ${cOps.length} | Hilbert dim: ${d}</div>
 <h2>1. Circuit Description</h2>
 <div class="summary-box">
   <strong>Qubit count:</strong> ${n} &nbsp;&nbsp; <strong>Total gates:</strong> ${cOps.length} &nbsp;&nbsp; <strong>Hilbert space dimension:</strong> ${d}<br>
-  Initial state: |0…0⟩ (all qubits in ground state)
+  Initial state: |0...0> (all qubits in ground state)
 </div>
 <table>
   <thead><tr><th>#</th><th>Gate</th><th>Target</th></tr></thead>
   <tbody>${gateList||'<tr><td colspan="3">No gates applied</td></tr>'}</tbody>
 </table>
-<h2>2. Quantum State — Top Amplitudes</h2>
+<h2>2. Quantum State - Top Amplitudes</h2>
 <table>
   <thead><tr><th>State</th><th>Amplitude</th><th>Phase</th><th>Probability</th></tr></thead>
   <tbody>${stateRows||'<tr><td colspan="4">No significant amplitudes</td></tr>'}</tbody>
 </table>
-<h2>3. Bloch Vector — Q0 (reduced state)</h2>
+<h2>3. Bloch Vector - Q0 (reduced state)</h2>
 <div class="summary-box bloch-row">
   <span class="bloch-num">x = ${bv.x.toFixed(6)}</span>
   <span class="bloch-num">y = ${bv.y.toFixed(6)}</span>
@@ -2254,19 +2273,50 @@ function exportPDF(){
 <div class="summary-box">
   Bloch vector magnitude: ${Math.sqrt(bv.x*bv.x+bv.y*bv.y+bv.z*bv.z).toFixed(6)}<br>
   Q0 purity: ${(0.5*(1+bv.x*bv.x+bv.y*bv.y+bv.z*bv.z)).toFixed(6)}<br>
-  ${Math.sqrt(bv.x*bv.x+bv.y*bv.y+bv.z*bv.z)<0.99?'Q0 is in a <strong>mixed/entangled</strong> reduced state (purity < 1)':'Q0 is in a <strong>pure</strong> state (purity ≈ 1)'}
+  ${Math.sqrt(bv.x*bv.x+bv.y*bv.y+bv.z*bv.z)<0.99?'Q0 is in a <strong>mixed/entangled</strong> reduced state (purity < 1)':'Q0 is in a <strong>pure</strong> state (purity ~ 1)'}
 </div>
 <h2>4. Full Probability Distribution</h2>
 <table>
   <thead><tr><th>Basis State</th><th>Probability</th></tr></thead>
   <tbody>${allProbRows}</tbody>
 </table>
-<div class="footer">HDQS Quantum Visualiser &nbsp;|&nbsp; SIA Software Innovations Private Limited &nbsp;|&nbsp; edu.siasoftwareinnovations.com</div>
-</div></body></html>`;
-  const w=window.open('','_blank','width=800,height=900');
-  w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),600);}
+<div class="footer">HDQS Quantum Visualiser | SIA Software Innovations Private Limited | edu.siasoftwareinnovations.com</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"><\/script>
+<script>
+async function downloadPdf(){
+  const status=document.getElementById('dl-status');
+  try{
+    if(typeof html2pdf==='undefined'){
+      status.textContent='PDF library failed to load. Use Print as fallback.';
+      return;
+    }
+    status.textContent='Generating PDF...';
+    const opt={
+      margin:[8,8,8,8],
+      filename:'${reportFileName}',
+      image:{type:'jpeg',quality:0.98},
+      html2canvas:{scale:2,useCORS:true},
+      jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},
+      pagebreak:{mode:['css','legacy']}
+    };
+    await html2pdf().set(opt).from(document.querySelector('.page')).save();
+    status.textContent='Downloaded.';
+  }catch(err){
+    status.textContent='Download failed. Use Print as fallback.';
+  }
+}
+<\/script>
+</body></html>`;
 
-// ══ NAVIGATION ══
+  const w=window.open('','_blank','width=800,height=900');
+  if(!w){alert('Popup blocked. Please allow popups and try again.');return;}
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  const isMobile=/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
+  if(!isMobile)setTimeout(()=>w.print(),600);
+}// ══ NAVIGATION ══
 function showPage(name,btn){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
